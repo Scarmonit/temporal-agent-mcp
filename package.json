@@ -1,0 +1,39 @@
+{
+  "name": "temporal-agent-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for persistent task scheduling - enables AI agents to schedule future actions",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "worker": "node workers/scheduler.js",
+    "migrate": "node db/migrate.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "scheduler",
+    "cron",
+    "ai-agent",
+    "temporal"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cron-parser": "^4.9.0",
+    "express": "^4.18.2",
+    "ms": "^2.1.3",
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^6.9.7",
+    "pg": "^8.11.3",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
