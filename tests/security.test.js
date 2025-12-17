@@ -1,8 +1,9 @@
 // Security tests for Temporal Agent MCP
 // Verifies all security fixes: CRITICAL-1,2,3 and HIGH-1,2,3,4
 
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, before, after } from 'node:test';
 import assert from 'node:assert';
+import request from 'supertest';
 import {
   validateWebhookUrl,
   validateCronExpression,
@@ -11,6 +12,10 @@ import {
   verifyHmacSignature,
   isBlockedIP,
 } from '../utils/security.js';
+import app, { resetRateLimits, RATE_LIMIT_MAX_REQUESTS } from '../app.js';
+
+// Set test environment
+process.env.NODE_ENV = 'test';
 
 describe('Security Tests', () => {
 
@@ -331,21 +336,144 @@ describe('Security Tests', () => {
   });
 
   describe('Rate Limiting (HIGH-3)', () => {
-    // These tests would require mocking the HTTP server
-    // For now, we document the expected behavior
+    beforeEach(() => {
+      resetRateLimits();
+    });
 
-    it.todo('should enforce per-IP rate limits');
-    it.todo('should not allow session ID bypass');
-    it.todo('should return 429 when limit exceeded');
-    it.todo('should include Retry-After header');
+    it('should enforce per-IP rate limits', async () => {
+      // Make a request and check rate limit headers
+      const res = await request(app)
+        .get('/mcp/tools')
+        .set('X-Forwarded-For', '192.0.2.1');
+
+      assert.strictEqual(res.status, 200);
+      assert.ok(res.headers['x-ratelimit-limit']);
+      assert.ok(res.headers['x-ratelimit-remaining']);
+    });
+
+    it('should not allow session ID bypass', async () => {
+      // Same IP with different session IDs should share rate limit
+      const ip = '192.0.2.2';
+
+      const res1 = await request(app)
+        .get('/mcp/tools')
+        .set('X-Forwarded-For', ip)
+        .set('X-Session-Id', 'session-1');
+
+      const res2 = await request(app)
+        .get('/mcp/tools')
+        .set('X-Forwarded-For', ip)
+        .set('X-Session-Id', 'session-2');
+
+      // Both should succeed, but remaining count should decrease
+      assert.strictEqual(res1.status, 200);
+      assert.strictEqual(res2.status, 200);
+
+      const remaining1 = parseInt(res1.headers['x-ratelimit-remaining'], 10);
+      const remaining2 = parseInt(res2.headers['x-ratelimit-remaining'], 10);
+
+      // Second request should have lower remaining count (same IP)
+      assert.strictEqual(remaining2, remaining1 - 1);
+    });
+
+    it('should return 429 when limit exceeded', async () => {
+      const ip = '192.0.2.3';
+
+      // Make 100 requests to exhaust the limit
+      for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS; i++) {
+        await request(app)
+          .get('/mcp/tools')
+          .set('X-Forwarded-For', ip);
+      }
+
+      // 101st request should be rejected
+      const res = await request(app)
+        .get('/mcp/tools')
+        .set('X-Forwarded-For', ip);
+
+      assert.strictEqual(res.status, 429);
+      assert.strictEqual(res.body.error, 'Too Many Requests');
+    });
+
+    it('should include Retry-After header', async () => {
+      const ip = '192.0.2.4';
+
+      // Exhaust rate limit
+      for (let i = 0; i < RATE_LIMIT_MAX_REQUESTS; i++) {
+        await request(app)
+          .get('/mcp/tools')
+          .set('X-Forwarded-For', ip);
+      }
+
+      // Check the rejected response has Retry-After
+      const res = await request(app)
+        .get('/mcp/tools')
+        .set('X-Forwarded-For', ip);
+
+      assert.strictEqual(res.status, 429);
+      assert.ok(res.headers['retry-after'], 'Should include Retry-After header');
+      assert.ok(parseInt(res.headers['retry-after'], 10) > 0);
+    });
   });
 
   describe('Error Disclosure (HIGH-4)', () => {
-    // These tests would require mocking the HTTP server
+    // Use unique IPs for each test to avoid rate limit interference
+    const errorTestIp = '198.51.100.1';
 
-    it.todo('should not expose database errors');
-    it.todo('should not expose stack traces in production');
-    it.todo('should return generic error messages');
+    beforeEach(() => {
+      resetRateLimits();
+    });
+
+    it('should not expose database errors', async () => {
+      const res = await request(app)
+        .post('/mcp/execute')
+        .set('Content-Type', 'application/json')
+        .set('X-Forwarded-For', errorTestIp)
+        .send({ tool: 'throw_db_error' });
+
+      assert.strictEqual(res.status, 500);
+      // Error message should NOT contain database details
+      assert.ok(!res.body.message.includes('ECONNREFUSED'));
+      assert.ok(!res.body.message.includes('127.0.0.1:5432'));
+      assert.ok(!res.body.message.includes('database'));
+    });
+
+    it('should not expose stack traces in production', async () => {
+      // Ensure we're in production mode for this test
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      const res = await request(app)
+        .post('/mcp/execute')
+        .set('Content-Type', 'application/json')
+        .set('X-Forwarded-For', errorTestIp)
+        .send({ tool: 'throw_internal_error' });
+
+      assert.strictEqual(res.status, 500);
+      // Should not contain stack trace elements
+      const body = JSON.stringify(res.body);
+      assert.ok(!body.includes('at Object'), 'Should not expose stack trace');
+      assert.ok(!body.includes('/app/index.js'), 'Should not expose file paths');
+
+      process.env.NODE_ENV = originalEnv;
+    });
+
+    it('should return generic error messages', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'production';
+
+      const res = await request(app)
+        .post('/mcp/execute')
+        .set('Content-Type', 'application/json')
+        .set('X-Forwarded-For', errorTestIp)
+        .send({ tool: 'throw_internal_error' });
+
+      assert.strictEqual(res.status, 500);
+      assert.strictEqual(res.body.error, 'Internal server error');
+      assert.strictEqual(res.body.message, 'An error occurred processing your request');
+
+      process.env.NODE_ENV = originalEnv;
+    });
   });
 
 });
