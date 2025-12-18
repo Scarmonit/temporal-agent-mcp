@@ -137,14 +137,19 @@ async function processDueTasks() {
 
 /**
  * Clean up stale locks (from crashed workers)
+ * SECURITY FIX: Uses parameterized query to prevent SQL injection
  */
 async function cleanupStaleLocks() {
   try {
+    // Convert lockTimeoutMs to seconds for the interval calculation
+    const lockTimeoutSeconds = config.scheduler.lockTimeoutMs / 1000;
+
     const result = await pool.query(
       `UPDATE tasks
        SET locked_at = NULL, locked_by = NULL
-       WHERE locked_at < NOW() - INTERVAL '${config.scheduler.lockTimeoutMs / 1000} seconds'
-       RETURNING id, name`
+       WHERE locked_at < NOW() - (INTERVAL '1 second' * $1)
+       RETURNING id, name`,
+      [lockTimeoutSeconds]
     );
 
     if (result.rows.length > 0) {

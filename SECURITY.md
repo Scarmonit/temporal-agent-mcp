@@ -5,7 +5,7 @@
 This document details the comprehensive security hardening applied to Temporal Agent MCP Server. All vulnerabilities identified have been addressed with defense-in-depth measures.
 
 **Audit Date**: December 2024
-**Test Coverage**: 49/49 tests passing (100%)
+**Test Coverage**: 51/51 tests passing (100%)
 **Architecture Grade**: A (94/100)
 
 ---
@@ -308,23 +308,27 @@ app.use((req, res, next) => {
 |-----------|-------|-------|
 | MCP Tool Interface | A+ | Exemplary protocol compliance |
 | Error Handling | A+ | Security-hardened, consistent |
-| Worker Recovery | A- | Robust with minor SQL fix needed |
+| Worker Recovery | A+ | Robust, SQL injection fixed |
 | Database Schema | A+ | Well-normalized, properly indexed |
 | Separation of Concerns | A+ | Clean layering, no circular deps |
 
-### Known Issue (Minor)
+### Resolved Issues
 
-**SQL Injection in Stale Lock Cleanup**
-File: `workers/scheduler.js:146`
+**SQL Injection in Stale Lock Cleanup** - FIXED
+File: `workers/scheduler.js:142-153`
 
-Template literal in INTERVAL clause should use parameterized query:
+Previously used template literal in INTERVAL clause. Now uses parameterized query:
 ```javascript
-// Current (vulnerable)
+// Before (vulnerable)
 WHERE locked_at < NOW() - INTERVAL '${lockTimeoutMs / 1000} seconds'
 
-// Recommended fix
-WHERE locked_at < NOW() - (INTERVAL '1 seconds' * $1)
+// After (fixed)
+const lockTimeoutSeconds = config.scheduler.lockTimeoutMs / 1000;
+WHERE locked_at < NOW() - (INTERVAL '1 second' * $1)
+// with [lockTimeoutSeconds] as parameter
 ```
+
+Added regression tests to prevent reintroduction of this vulnerability.
 
 ---
 
