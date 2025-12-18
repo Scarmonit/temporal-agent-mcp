@@ -12,7 +12,7 @@ import {
   verifyHmacSignature,
   isBlockedIP,
 } from '../utils/security.js';
-import app, { resetRateLimits, RATE_LIMIT_MAX_REQUESTS } from '../app.js';
+import app, { resetRateLimits, RATE_LIMIT_MAX_REQUESTS } from '../index.js';
 
 // Set test environment
 process.env.NODE_ENV = 'test';
