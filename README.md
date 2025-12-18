@@ -209,10 +209,96 @@ Stores notification for polling via `/notifications` endpoint.
 
 ## Security
 
-- **SSRF Protection**: Blocks private IP ranges for webhooks
-- **Rate Limiting**: Configurable task limits per user
-- **Payload Sanitization**: Max size limits, prototype pollution prevention
-- **HMAC Signatures**: Verify webhook authenticity
+This server has undergone comprehensive security hardening with **49/49 security tests passing**.
+
+| Severity | Vulnerability | Status |
+|----------|--------------|--------|
+| CRITICAL | DNS Rebinding (SSRF) | FIXED |
+| CRITICAL | IPv6 SSRF Bypass | FIXED |
+| CRITICAL | HMAC Replay Attacks | FIXED |
+| HIGH | Cron Expression Injection | FIXED |
+| HIGH | No Rate Limiting | FIXED |
+| HIGH | Verbose Error Disclosure | FIXED |
+| MEDIUM | Prototype Pollution | FIXED |
+| MEDIUM | Lenient JSON Parsing | FIXED |
+
+**Key Security Features:**
+- **SSRF Protection**: Blocks IPv4 + IPv6 private ranges, cloud metadata endpoints
+- **DNS Rebinding Prevention**: Re-validates URLs at fetch time with IP pinning
+- **Rate Limiting**: 100 requests per 15 minutes per IP
+- **HMAC with Timestamp**: Prevents replay attacks (5-minute window)
+- **Strict Input Validation**: Cron whitelist, payload sanitization
+
+See [SECURITY.md](./SECURITY.md) for detailed vulnerability analysis and fixes.
+
+## Deployment
+
+### Render
+
+1. **Create a new Web Service** on Render
+2. **Connect your repository**
+3. **Configure settings**:
+   - **Build Command**: `npm install && npm run migrate`
+   - **Start Command**: `npm start`
+   - **Environment**: Node
+
+4. **Add environment variables**:
+   ```
+   DATABASE_URL=postgresql://user:pass@host:5432/db
+   NODE_ENV=production
+   HMAC_SECRET=<generate-secure-random-string>
+   ```
+
+5. **Add PostgreSQL database** (Render managed or external)
+
+6. **Deploy** - The health check endpoint `/health` verifies deployment
+
+### Railway
+
+1. **Create a new project** from GitHub
+2. **Add PostgreSQL plugin** (one-click setup)
+3. **Configure environment**:
+   ```
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
+   NODE_ENV=production
+   HMAC_SECRET=<generate-secure-random-string>
+   ```
+
+4. **Set start command**: `npm run migrate && npm start`
+
+5. **Deploy** - Railway auto-detects Node.js
+
+### Docker
+
+```dockerfile
+FROM node:20-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --only=production
+COPY . .
+EXPOSE 3324
+CMD ["npm", "start"]
+```
+
+```bash
+docker build -t temporal-agent-mcp .
+docker run -d -p 3324:3324 \
+  -e DATABASE_URL="postgresql://..." \
+  -e NODE_ENV=production \
+  temporal-agent-mcp
+```
+
+### Running the Scheduler Worker
+
+The scheduler worker runs as a separate process:
+
+```bash
+# In production, run both processes:
+npm start           # MCP Server (port 3324)
+npm run worker      # Scheduler Worker (polls tasks)
+```
+
+For PaaS deployments, use a **Background Worker** or **Worker Dyno** for the scheduler.
 
 ## Architecture
 

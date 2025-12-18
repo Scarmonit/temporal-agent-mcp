@@ -476,6 +476,61 @@ describe('Security Tests', () => {
     });
   });
 
+  describe('SQL Injection Prevention', () => {
+    it('should use parameterized queries in scheduler (not template literals)', async () => {
+      // Read the scheduler.js file and verify no SQL injection patterns
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const schedulerPath = path.join(__dirname, '..', 'workers', 'scheduler.js');
+
+      const schedulerCode = await fs.readFile(schedulerPath, 'utf-8');
+
+      // Check that the vulnerable pattern is NOT present
+      // Vulnerable: INTERVAL '${...}' or similar template literal in SQL
+      const vulnerablePatterns = [
+        /INTERVAL\s+'\$\{/,           // INTERVAL '${...
+        /INTERVAL\s+`\$\{/,           // INTERVAL `${...
+        /WHERE.*\$\{.*\}/,            // WHERE clause with ${...}
+        /SET.*\$\{.*\}/,              // SET clause with ${...}
+      ];
+
+      for (const pattern of vulnerablePatterns) {
+        assert.ok(
+          !pattern.test(schedulerCode),
+          `Found vulnerable SQL pattern: ${pattern.toString()}`
+        );
+      }
+
+      // Check that parameterized query pattern IS present
+      assert.ok(
+        schedulerCode.includes("INTERVAL '1 second' * $1"),
+        'Should use parameterized query pattern for interval calculation'
+      );
+    });
+
+    it('should use $1 placeholder in stale lock cleanup query', async () => {
+      const fs = await import('fs/promises');
+      const path = await import('path');
+      const { fileURLToPath } = await import('url');
+
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const schedulerPath = path.join(__dirname, '..', 'workers', 'scheduler.js');
+
+      const schedulerCode = await fs.readFile(schedulerPath, 'utf-8');
+
+      // Verify the cleanupStaleLocks function uses parameterized queries
+      assert.ok(
+        schedulerCode.includes('[lockTimeoutSeconds]'),
+        'Should pass lockTimeoutSeconds as query parameter'
+      );
+    });
+  });
+
 });
 
 // Run tests
