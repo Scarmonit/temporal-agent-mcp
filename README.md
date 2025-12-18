@@ -209,7 +209,7 @@ Stores notification for polling via `/notifications` endpoint.
 
 ## Security
 
-This server has undergone comprehensive security hardening with **49/49 security tests passing**.
+This server has undergone comprehensive security hardening with **51/51 security tests passing**.
 
 | Severity | Vulnerability | Status |
 |----------|--------------|--------|
@@ -321,6 +321,11 @@ For PaaS deployments, use a **Background Worker** or **Worker Dyno** for the sch
 │  └─ stored_notifications (polling)                          │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+## Documentation
+
+- [SECURITY.md](./SECURITY.md) - Security audit report and vulnerability fixes
+- [docs/INTEGRATION.md](./docs/INTEGRATION.md) - Integration with Jules orchestration
 
 ## License
 
